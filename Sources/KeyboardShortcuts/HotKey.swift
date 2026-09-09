@@ -115,7 +115,7 @@ final class HotKeyCenter {
 		EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventRawKeyUp))
 	]
 
-	private lazy var keyEventMonitor = RunLoopLocalEventMonitor(events: [.keyDown, .keyUp], runLoopMode: .eventTracking) { [weak self] event in
+	private lazy var keyEventMonitor = RunLoopLocalKeyEventMonitor(runLoopMode: .eventTracking) { [weak self] event in
 		guard
 			let self,
 			handleRawKeyEvent(

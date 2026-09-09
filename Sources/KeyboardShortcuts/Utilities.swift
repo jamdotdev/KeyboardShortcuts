@@ -97,23 +97,38 @@ final class LocalEventMonitor {
 }
 
 
-final class RunLoopLocalEventMonitor {
+final class RunLoopLocalKeyEventMonitor {
 	private let runLoopMode: RunLoop.Mode
 	private let callback: (NSEvent) -> NSEvent?
 	private let observer: CFRunLoopObserver
 	private var isStarted = false
 
 	init(
-		events: NSEvent.EventTypeMask,
 		runLoopMode: RunLoop.Mode,
 		callback: @escaping (NSEvent) -> NSEvent?
 	) {
 		self.runLoopMode = runLoopMode
 		self.callback = callback
-		let handledEventTypes = events.rawValue
+		let keyEventsMask = NSEvent.EventTypeMask([.keyUp, .keyDown]).rawValue
+		let keyEventTypes: [CGEventType] = [.keyUp, .keyDown]
 		var pendingEvents = [NSEvent]()
+		var lastKeyEventCount = UInt32.max
 
 		self.observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeSources.rawValue, true, 0) { _, _ in
+			// A count of key events seen since the window server started. This is inexpensive unlike NSApp.nextEvent which
+			// runs a CoreAnimation flush and a full layout pass. Note that the counter doesn't increment while this app's
+			// own menu is tracking.
+			let keyEventCount = keyEventTypes.reduce(0) {
+				$0 &+ CGEventSource.counterForEventType(.combinedSessionState, eventType: $1)
+			}
+
+			guard keyEventCount != lastKeyEventCount else {
+				// Nothing was pressed or released since the last pass so there is nothing to do.
+				return
+			}
+
+			lastKeyEventCount = keyEventCount
+
 			// Pull all events from the queue and handle the ones matching the given types.
 			// Non-matching events are left untouched, maintaining their order in the queue.
 			pendingEvents.removeAll(keepingCapacity: true)
@@ -125,7 +140,7 @@ final class RunLoopLocalEventMonitor {
 
 			// Iterate over the gathered events, instead of doing it directly in the `while` loop, to avoid potential infinite loops caused by re-retrieving undiscarded events.
 			for eventToHandle in pendingEvents {
-				let handledEvent = if handledEventTypes & (1 << eventToHandle.type.rawValue) == 0 {
+				let handledEvent = if keyEventsMask & (1 << eventToHandle.type.rawValue) == 0 {
 					eventToHandle
 				} else {
 					callback(eventToHandle)
